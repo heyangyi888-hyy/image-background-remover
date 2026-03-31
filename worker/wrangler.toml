@@ -1,0 +1,6 @@
+name = "image-bg-remover-worker"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[vars]
+# REMOVE_BG_API_KEY 在 Cloudflare Dashboard 中设置

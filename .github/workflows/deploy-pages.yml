@@ -1,0 +1,86 @@
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy-worker:
+    runs-on: ubuntu-latest
+    outputs:
+      worker_url: ${{ steps.deploy.outputs.worker_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Wrangler
+        run: npm install -g wrangler@3
+
+      - name: Deploy to Cloudflare Workers
+        id: deploy
+        run: |
+          echo "=== Check wrangler version ==="
+          wrangler --version
+          echo ""
+          echo "=== Check auth ==="
+          wrangler whoami
+          echo ""
+          echo "=== Set secret via bulk ==="
+          echo "{\"REMOVE_BG_API_KEY\": \"$REMOVE_BG_API_KEY\"}" > secrets.json
+          wrangler secret bulk secrets.json
+          echo ""
+          echo "=== Deploy Worker ==="
+          wrangler deploy 2>&1 | tee deploy.log
+          echo ""
+          echo "=== Extract Worker URL ==="
+          WORKER_URL=$(grep -o 'https://[^ ]*\.workers\.dev' deploy.log | head -1)
+          if [ -z "$WORKER_URL" ]; then
+            WORKER_URL="https://image-bg-remover-worker.workers.dev"
+          fi
+          echo "worker_url=$WORKER_URL" >> $GITHUB_OUTPUT
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          REMOVE_BG_API_KEY: ${{ secrets.REMOVE_BG_API_KEY }}
+
+  deploy-pages:
+    runs-on: ubuntu-latest
+    needs: deploy-worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm install
+        working-directory: frontend
+
+      - name: Install Wrangler for Pages
+        run: npm install -g wrangler@latest
+
+      - name: Build with Worker URL
+        run: |
+          # 注入 Worker URL 到前端
+          WORKER_URL="${{ needs.deploy-worker.outputs.worker_url }}"
+          echo "NEXT_PUBLIC_API_URL=${WORKER_URL}/api/remove" >> $GITHUB_ENV
+          npm run build
+        working-directory: frontend
+        env:
+          NEXT_PUBLIC_API_URL: "${{ needs.deploy-worker.outputs.worker_url }}/api/remove"
+
+      - name: Deploy to Cloudflare Pages
+        run: |
+          npx wrangler pages deploy frontend/out --project-name=image-background-remover
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}

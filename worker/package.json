@@ -1,0 +1,10 @@
+{
+  "name": "image-bg-remover-worker",
+  "version": "1.0.0",
+  "private": true,
+  "devDependencies": {
+    "wrangler": "^3.0.0",
+    "typescript": "^5.0.0",
+    "@cloudflare/workers-types": "^4.20240117.0"
+  }
+}
